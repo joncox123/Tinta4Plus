@@ -32,34 +32,33 @@ from DisplayManager import DisplayManager
 from WacomManager import WacomManager
 
 
-# Configuration
-SOCKET_PATH = '/tmp/tinta4plus.sock'
-HELPER_SCRIPT = '/usr/local/bin/tinta4plus-helper.py'  # Or use sys.argv[0] relative path
-KEEPALIVE_INTERVAL = 2.4  # seconds (send keepalive every 2.4s, watchdog is 20s)
-SOCKET_TIMEOUT = 5.0  # seconds
-
-# Display names (ThinkBook Plus Gen 4 has eDP-1=OLED, eDP-2=E-Ink)
-DISPLAY_OLED = "eDP-1"
-DISPLAY_EINK = "eDP-2"
-
-
 class EInkControlGUI:
+    # Configuration
+    SOCKET_PATH = '/tmp/tinta4plus.sock'
+    KEEPALIVE_INTERVAL = 2.4  # seconds (send keepalive every 2.4s, watchdog is 20s)
+    SOCKET_TIMEOUT = 5.0  # seconds
+
+    # Display names (ThinkBook Plus Gen 4 has eDP-1=OLED, eDP-2=E-Ink)
+    DISPLAY_OLED = "eDP-1"
+    DISPLAY_EINK = "eDP-2"
+
     """Main GUI application using tkinter"""
     
-    def __init__(self, root, logger):
+    def __init__(self, root, HELPER_SCRIPT, logger):
+        self.HELPER_SCRIPT = HELPER_SCRIPT
         self.logger = logger
         self.root = root
         self.root.title("ThinkBook E-Ink Control")
         self.root.geometry("600x700")
         
         # Helper client
-        self.helper = HelperClient()
+        self.helper = HelperClient(logger)
         self.keepalive_after_id = None
         self.helper_process = None
         
         # Managers
-        self.display_mgr = DisplayManager()
-        self.wacom_mgr = WacomManager()
+        self.display_mgr = DisplayManager(logger)
+        self.wacom_mgr = WacomManager(logger)
         
         # Brightness timer for debouncing
         self.brightness_timer = None
@@ -267,9 +266,9 @@ class EInkControlGUI:
     def initialize_helper(self):
         """Initialize connection to helper daemon"""
         # First try to connect to existing helper
-        if os.path.exists(SOCKET_PATH):
+        if os.path.exists(self.SOCKET_PATH):
             try:
-                if self.helper.connect(SOCKET_PATH, timeout=2.0):
+                if self.helper.connect(self.SOCKET_PATH, timeout=2.0):
                     self.update_status("Connected to helper daemon")
                     self.log_message("Connected to existing helper daemon")
                     self.start_keepalive()
@@ -278,7 +277,7 @@ class EInkControlGUI:
                 self.log_message(f"Failed to connect to existing socket: {e}")
                 # Remove stale socket
                 try:
-                    os.remove(SOCKET_PATH)
+                    os.remove(self.SOCKET_PATH)
                 except:
                     pass
         
@@ -293,7 +292,7 @@ class EInkControlGUI:
         """Launch helper daemon in background thread"""
         try:
             # Determine helper script path
-            helper_path = HELPER_SCRIPT
+            helper_path = self.HELPER_SCRIPT
             
             # If not installed, try relative to this script
             if not os.path.exists(helper_path):
@@ -317,8 +316,8 @@ class EInkControlGUI:
             # Try to connect
             max_attempts = 10
             for attempt in range(max_attempts):
-                if os.path.exists(SOCKET_PATH):
-                    if self.helper.connect(SOCKET_PATH, timeout=2.0):
+                if os.path.exists(self.SOCKET_PATH):
+                    if self.helper.connect(self.SOCKET_PATH, timeout=2.0):
                         self.root.after(0, self._helper_launch_success)
                         return
                 time.sleep(0.5)
@@ -350,10 +349,10 @@ class EInkControlGUI:
             self.root.after_cancel(self.keepalive_after_id)
         
         self.keepalive_after_id = self.root.after(
-            int(KEEPALIVE_INTERVAL * 1000),
+            int(self.KEEPALIVE_INTERVAL * 1000),
             self.send_keepalive
         )
-        self.logger.info(f"Started keepalive timer ({KEEPALIVE_INTERVAL}s interval)")
+        self.logger.info(f"Started keepalive timer ({self.KEEPALIVE_INTERVAL}s interval)")
     
     def send_keepalive(self):
         """Send keepalive message to helper"""
@@ -373,7 +372,7 @@ class EInkControlGUI:
             
             # Schedule next keepalive
             self.keepalive_after_id = self.root.after(
-                int(KEEPALIVE_INTERVAL * 1000),
+                int(self.KEEPALIVE_INTERVAL * 1000),
                 self.send_keepalive
             )
             
@@ -393,9 +392,9 @@ class EInkControlGUI:
         self.log_message("Attempting to restart helper daemon...")
         
         # Try to connect to existing socket first
-        if os.path.exists(SOCKET_PATH):
+        if os.path.exists(self.SOCKET_PATH):
             try:
-                if self.helper.connect(SOCKET_PATH, timeout=2.0):
+                if self.helper.connect(self.SOCKET_PATH, timeout=2.0):
                     self.log_message("✓ Reconnected to existing helper")
                     self.update_status("Reconnected to helper daemon")
                     self.start_keepalive()
@@ -575,18 +574,18 @@ class EInkControlGUI:
         enabled = self.oled_enabled_var.get()
         
         if enabled:
-            self.log_message(f"Enabling OLED display ({DISPLAY_OLED})...")
-            if self.display_mgr.enable_display(DISPLAY_OLED):
+            self.log_message(f"Enabling OLED display ({self.DISPLAY_OLED})...")
+            if self.display_mgr.enable_display(self.DISPLAY_OLED):
                 self.update_status("OLED display enabled")
-                self.log_message(f"✓ OLED display ({DISPLAY_OLED}) enabled")
+                self.log_message(f"✓ OLED display ({self.DISPLAY_OLED}) enabled")
             else:
                 self.log_message(f"✗ Failed to enable OLED display", level='error')
                 self.oled_enabled_var.set(False)  # Revert on failure
         else:
-            self.log_message(f"Disabling OLED display ({DISPLAY_OLED})...")
-            if self.display_mgr.disable_display(DISPLAY_OLED):
+            self.log_message(f"Disabling OLED display ({self.DISPLAY_OLED})...")
+            if self.display_mgr.disable_display(self.DISPLAY_OLED):
                 self.update_status("OLED display disabled")
-                self.log_message(f"✓ OLED display ({DISPLAY_OLED}) disabled")
+                self.log_message(f"✓ OLED display ({self.DISPLAY_OLED}) disabled")
             else:
                 self.log_message(f"✗ Failed to disable OLED display", level='error')
                 self.oled_enabled_var.set(True)  # Revert on failure
@@ -596,18 +595,18 @@ class EInkControlGUI:
         enabled = self.eink_display_var.get()
         
         if enabled:
-            self.log_message(f"Enabling E-Ink display ({DISPLAY_EINK})...")
-            if self.display_mgr.enable_display(DISPLAY_EINK):
+            self.log_message(f"Enabling E-Ink display ({self.DISPLAY_EINK})...")
+            if self.display_mgr.enable_display(self.DISPLAY_EINK):
                 self.update_status("E-Ink display enabled")
-                self.log_message(f"✓ E-Ink display ({DISPLAY_EINK}) enabled")
+                self.log_message(f"✓ E-Ink display ({self.DISPLAY_EINK}) enabled")
             else:
                 self.log_message(f"✗ Failed to enable E-Ink display", level='error')
                 self.eink_display_var.set(False)  # Revert on failure
         else:
-            self.log_message(f"Disabling E-Ink display ({DISPLAY_EINK})...")
-            if self.display_mgr.disable_display(DISPLAY_EINK):
+            self.log_message(f"Disabling E-Ink display ({self.DISPLAY_EINK})...")
+            if self.display_mgr.disable_display(self.DISPLAY_EINK):
                 self.update_status("E-Ink display disabled")
-                self.log_message(f"✓ E-Ink display ({DISPLAY_EINK}) disabled")
+                self.log_message(f"✓ E-Ink display ({self.DISPLAY_EINK}) disabled")
             else:
                 self.log_message(f"✗ Failed to disable E-Ink display", level='error')
                 self.eink_display_var.set(True)  # Revert on failure
@@ -637,6 +636,8 @@ class EInkControlGUI:
 
 def main():
     """Entry point"""
+    HELPER_SCRIPT = '/usr/local/bin/HelperDaemon.py'  # Or use sys.argv[0] relative path
+
     # Setup logging
     logging.basicConfig(
         level=logging.INFO,
@@ -648,14 +649,13 @@ def main():
     if not os.path.exists(HELPER_SCRIPT):
         # Try relative path
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        alt_helper = os.path.join(script_dir, 'tinta4plus-helper.py')
+        alt_helper = os.path.join(script_dir, 'HelperDaemon.py')
         if os.path.exists(alt_helper):
-            
             HELPER_SCRIPT = alt_helper
             logger.info(f"Using helper at: {HELPER_SCRIPT}")
     
     root = tk.Tk()
-    app = EInkControlGUI(root, logger)
+    app = EInkControlGUI(root, HELPER_SCRIPT, logger)
     
     try:
         root.mainloop()
