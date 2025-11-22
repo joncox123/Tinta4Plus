@@ -35,7 +35,7 @@ from EInkUSBController import EInkUSBController
 SOCKET_PATH = '/tmp/tinta4plus.sock'
 PID_FILE = '/tmp/tinta4plus.pid'
 WATCHDOG_TIMEOUT = 20.0  # seconds
-LOG_LEVEL = logging.INFO
+LOG_LEVEL = logging.DEBUG  # Changed to DEBUG for detailed EC port access logging
 
 
 class HelperDaemon:
@@ -340,18 +340,35 @@ def main():
     if os.geteuid() != 0:
         print("ERROR: This helper must be run as root (use pkexec or sudo)", file=sys.stderr)
         return 1
-    
+
     # Setup logging
+    log_handlers = [
+        logging.StreamHandler(sys.stderr),  # Console output
+        logging.FileHandler('/tmp/TintaHelper.log')  # File output
+    ]
+
     logging.basicConfig(
         level=LOG_LEVEL,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-        handlers=[logging.StreamHandler(sys.stderr)]
+        handlers=log_handlers
     )
     logger = logging.getLogger('tinta4plus-helper')
-    
+
+    # Setup exception hook to log uncaught exceptions
+    def handle_exception(exc_type, exc_value, exc_traceback):
+        """Log uncaught exceptions"""
+        if issubclass(exc_type, KeyboardInterrupt):
+            # Allow keyboard interrupt to exit normally
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+
+        logger.critical("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
+
+    sys.excepthook = handle_exception
+
     logger.info("ThinkBook E-Ink Helper starting")
     logger.info(f"Watchdog timeout: {WATCHDOG_TIMEOUT}s")
-    
+
     daemon = HelperDaemon(logger)
     return daemon.run()
 

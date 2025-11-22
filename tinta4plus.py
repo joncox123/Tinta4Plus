@@ -21,6 +21,7 @@ Communicates via Unix socket with helper daemon
 import tkinter as tk
 from tkinter import ttk, scrolledtext, messagebox
 import subprocess
+import sys
 import os
 import time
 import threading
@@ -639,11 +640,29 @@ def main():
     HELPER_SCRIPT = '/usr/local/bin/HelperDaemon.py'  # Or use sys.argv[0] relative path
 
     # Setup logging
+    log_handlers = [
+        logging.StreamHandler(),  # Console output
+        logging.FileHandler('/tmp/tinta4plus.log')  # File output
+    ]
+
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=log_handlers
     )
     logger = logging.getLogger('tinta4plus-gui')
+
+    # Setup exception hook to log uncaught exceptions
+    def handle_exception(exc_type, exc_value, exc_traceback):
+        """Log uncaught exceptions"""
+        if issubclass(exc_type, KeyboardInterrupt):
+            # Allow keyboard interrupt to exit normally
+            sys.__excepthook__(exc_type, exc_value, exc_traceback)
+            return
+
+        logger.critical("Uncaught exception", exc_info=(exc_type, exc_value, exc_traceback))
+
+    sys.excepthook = handle_exception
 
     # Check if helper script exists
     if not os.path.exists(HELPER_SCRIPT):

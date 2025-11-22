@@ -47,21 +47,23 @@ class ECController:
             portio.ioperm(self.EC_SC_PORT, 1, 1)
             self.logger.info("EC I/O port access granted")
         except Exception as e:
-            self.self.logger.error(f"Failed to get I/O port access (are you root?): {e}")
+            self.logger.error(f"Failed to get I/O port access (are you root?): {e}")
             raise
     
     def _wait_ibf_clear(self):
         """Wait for input buffer to be empty"""
         waited = 0
+        self.logger.debug(f"_wait_ibf_clear: reading from port 0x{self.EC_SC_PORT:02x}")
         while waited < self.TIMEOUT_US:
             status = portio.inb(self.EC_SC_PORT)
-            
+
             if not (status & self.EC_STAT_IBF):
+                self.logger.debug(f"_wait_ibf_clear: IBF clear (status=0x{status:02x})")
                 return True
-            
+
             time.sleep(self.POLL_DELAY_US / 1_000_000)
             waited += self.POLL_DELAY_US
-        
+
         raise TimeoutError("EC input buffer timeout (IBF)")
     
     def _wait_obf_set(self):
@@ -96,20 +98,30 @@ class ECController:
     
     def write_byte(self, address, value):
         """Write a byte to EC RAM"""
+        self.logger.debug(f"write_byte: address=0x{address:02x}, value=0x{value:02x}")
+
+        self.logger.debug("write_byte: waiting for IBF clear (1/4)")
         self._wait_ibf_clear()
-        
+
+        self.logger.debug(f"write_byte: sending WRITE command (0x{self.EC_CMD_WRITE:02x}) to port 0x{self.EC_SC_PORT:02x}")
         portio.outb(self.EC_CMD_WRITE, self.EC_SC_PORT)
-        
+
+        self.logger.debug("write_byte: waiting for IBF clear (2/4)")
         self._wait_ibf_clear()
-        
+
+        self.logger.debug(f"write_byte: sending address (0x{address:02x}) to port 0x{self.EC_DATA_PORT:02x}")
         portio.outb(address, self.EC_DATA_PORT)
-        
+
+        self.logger.debug("write_byte: waiting for IBF clear (3/4)")
         self._wait_ibf_clear()
-        
+
+        self.logger.debug(f"write_byte: sending value (0x{value:02x}) to port 0x{self.EC_DATA_PORT:02x}")
         portio.outb(value, self.EC_DATA_PORT)
-        
+
+        self.logger.debug("write_byte: waiting for IBF clear (4/4)")
         self._wait_ibf_clear()
-        
+
+        self.logger.debug("write_byte: complete")
         return True
     
     def write_and_verify(self, address, value):
