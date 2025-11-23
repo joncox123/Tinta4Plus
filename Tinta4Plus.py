@@ -33,6 +33,94 @@ from datetime import datetime
 from HelperClient import HelperClient
 from DisplayManager import DisplayManager
 
+class FloatingRefreshButton:
+    """Floating refresh button window that stays on top"""
+
+    def __init__(self, parent, on_refresh_callback, logger):
+        """Initialize the floating refresh button
+
+        Args:
+            parent: Parent tkinter window
+            on_refresh_callback: Function to call when button is pressed
+            logger: Logger instance
+        """
+        self.parent = parent
+        self.on_refresh_callback = on_refresh_callback
+        self.logger = logger
+
+        # Create a new top-level window
+        self.window = tk.Toplevel(parent)
+        self.window.title("")  # Empty title
+
+        # Remove window decorations (titlebar, close button, etc.)
+        self.window.overrideredirect(True)
+
+        # Set size
+        self.window.geometry("100x100")
+
+        # Make window always stay on top
+        self.window.attributes('-topmost', True)
+
+        # Make window semi-transparent (0.5 = 50% opacity)
+        self.window.attributes('-alpha', 0.5)
+
+        # Position window on left side, halfway down
+        # Get screen height to calculate vertical center
+        screen_height = self.window.winfo_screenheight()
+        y_position = (screen_height // 2) - 50  # Center the 100px button
+        x_position = 0  # Left edge of screen
+
+        self.window.geometry(f"100x100+{x_position}+{y_position}")
+
+        # Set window background to light blue
+        self.window.config(bg='lightblue')
+
+        # Create the refresh button that fills the entire window
+        # Using a unicode circular arrow character as refresh icon
+        # Note: highlightthickness=0 removes focus border, bd=0 removes button border
+        self.button = tk.Button(
+            self.window,
+            text="⟳",  # Circular arrow refresh symbol
+            font=('TkDefaultFont', 72),
+            command=self._on_click,
+            relief=tk.FLAT,
+            bd=0,
+            bg='lightblue',
+            activebackground='skyblue',
+            highlightthickness=0
+        )
+        self.button.pack(fill=tk.BOTH, expand=True)
+
+        # Bind hover effects
+        self.button.bind("<Enter>", self._on_hover_enter)
+        self.button.bind("<Leave>", self._on_hover_leave)
+
+        self.logger.info("Floating refresh button created")
+
+    def _on_click(self):
+        """Handle button click"""
+        self.logger.info("Floating refresh button clicked")
+        if self.on_refresh_callback:
+            self.on_refresh_callback()
+
+    def _on_hover_enter(self, event):
+        """Handle mouse hover enter"""
+        self.button.config(bg='skyblue')
+        self.window.config(bg='skyblue')
+
+    def _on_hover_leave(self, event):
+        """Handle mouse hover leave"""
+        self.button.config(bg='lightblue')
+        self.window.config(bg='lightblue')
+
+    def destroy(self):
+        """Destroy the floating button window"""
+        self.logger.info("Destroying floating refresh button")
+        if self.window:
+            self.window.destroy()
+            self.window = None
+
+
 class EInkControlGUI:
     # Version
     VERSION = "0.1.0 alpha"
@@ -53,7 +141,7 @@ class EInkControlGUI:
     EINK_DISABLED_IMAGE = "eink-disable.jpg"
 
     """Main GUI application using tkinter"""
-    
+
     def __init__(self, root, HELPER_SCRIPT, logger):
         self.HELPER_SCRIPT = HELPER_SCRIPT
         self.logger = logger
@@ -77,6 +165,9 @@ class EInkControlGUI:
 
         # Image viewer process for E-Ink privacy screen
         self.eink_image_process = None
+
+        # Floating refresh button
+        self.floating_refresh_button = None
 
         # Load settings from file (or use defaults)
         settings = self.load_settings()
@@ -674,6 +765,14 @@ class EInkControlGUI:
                 # Start periodic refresh timer if configured
                 self._start_refresh_timer()
 
+                # Create floating refresh button
+                self.log_message("Creating floating refresh button...")
+                self.floating_refresh_button = FloatingRefreshButton(
+                    self.root,
+                    self.on_refresh_full,
+                    self.logger
+                )
+
         else:
             # Disabling E-Ink
             self.log_message("Preparing to disable E-Ink display...")
@@ -681,10 +780,16 @@ class EInkControlGUI:
             # Step 1: Stop periodic refresh timer first
             self._stop_refresh_timer()
 
-            # Step 2: Disable refresh button
+            # Step 2: Destroy floating refresh button
+            if self.floating_refresh_button:
+                self.log_message("Destroying floating refresh button...")
+                self.floating_refresh_button.destroy()
+                self.floating_refresh_button = None
+
+            # Step 3: Disable refresh button
             self.btn_refresh.config(state='disabled')
 
-            # Step 3: Display privacy image on E-Ink screen
+            # Step 4: Display privacy image on E-Ink screen
             image_path = self.EINK_DISABLED_IMAGE
             if not os.path.exists(image_path):
                 # Try in script directory

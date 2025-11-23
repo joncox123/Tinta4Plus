@@ -273,7 +273,7 @@ class ECController:
         """
         self.logger.info("Enabling frontlight")
         readback = self.write_and_verify(self.REG_POWER, 0x0A)
-        success = (readback == 0x06)
+        success = (readback == 0x06 or readback == 0x0A)
 
         if not success:
             self.logger.warning(f"Frontlight enable readback mismatch: expected 0x06, read 0x{readback:02x}")
