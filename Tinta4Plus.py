@@ -27,6 +27,7 @@ import time
 import threading
 import logging
 import webbrowser
+import json
 from datetime import datetime
 
 from HelperClient import HelperClient
@@ -40,6 +41,8 @@ class EInkControlGUI:
     SOCKET_PATH = '/tmp/tinta4plus.sock'
     KEEPALIVE_INTERVAL = 2.4  # seconds (send keepalive every 2.4s, watchdog is 20s)
     SOCKET_TIMEOUT = 10.0  # seconds
+    CONFIG_DIR = os.path.expanduser("~/.config/Tinta4Plus")
+    SETTINGS_FILE = os.path.join(os.path.expanduser("~/.config/Tinta4Plus"), "settings")
 
     # Display names (ThinkBook Plus Gen 4 has eDP-1=OLED, eDP-2=E-Ink)
     DISPLAY_OLED = "eDP-1"
@@ -75,18 +78,76 @@ class EInkControlGUI:
         # Image viewer process for E-Ink privacy screen
         self.eink_image_process = None
 
-        # Display scaling (1.60x default)
-        self.display_scale = 1.60
+        # Load settings from file (or use defaults)
+        settings = self.load_settings()
+
+        # Display scaling (from settings)
+        self.display_scale = settings['display_scale']
 
         # Build UI
         self.build_ui()
+
+        # Apply loaded settings to UI controls after they're created
+        self.scale_var.set(self.display_scale)
+        self.scale_label.config(text=f"{self.display_scale:.2f}")
+        self.refresh_period_var.set(settings['refresh_period'])
+        self.refresh_period_label.config(text=str(settings['refresh_period']))
         
         # Set up window close handler
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
         
         # Initialize helper after short delay
         self.root.after(500, self.initialize_helper)
-    
+
+    def load_settings(self):
+        """Load settings from configuration file"""
+        # Default settings
+        defaults = {
+            'display_scale': 1.75,
+            'refresh_period': 15
+        }
+
+        if not os.path.exists(self.SETTINGS_FILE):
+            self.logger.info(f"Settings file not found, using defaults")
+            return defaults
+
+        try:
+            with open(self.SETTINGS_FILE, 'r') as f:
+                settings = json.load(f)
+            self.logger.info(f"Loaded settings from {self.SETTINGS_FILE}")
+
+            # Merge with defaults to handle missing keys
+            for key in defaults:
+                if key not in settings:
+                    settings[key] = defaults[key]
+
+            return settings
+
+        except Exception as e:
+            self.logger.error(f"Failed to load settings: {e}")
+            return defaults
+
+    def save_settings(self):
+        """Save current settings to configuration file"""
+        try:
+            # Ensure config directory exists
+            os.makedirs(self.CONFIG_DIR, exist_ok=True)
+
+            # Gather current settings
+            settings = {
+                'display_scale': self.display_scale,
+                'refresh_period': self.refresh_period_var.get()
+            }
+
+            # Write to file
+            with open(self.SETTINGS_FILE, 'w') as f:
+                json.dump(settings, f, indent=2)
+
+            self.logger.info(f"Saved settings to {self.SETTINGS_FILE}")
+
+        except Exception as e:
+            self.logger.error(f"Failed to save settings: {e}")
+
     def build_ui(self):
         """Build the tkinter user interface"""
 
@@ -745,6 +806,9 @@ class EInkControlGUI:
         self.scale_label.config(text=f"{scale:.2f}")
         self.log_message(f"Display scale set to {scale:.2f}x (will apply on next display switch)")
 
+        # Save settings
+        self.save_settings()
+
     def on_refresh_period_changed(self, value):
         """Handle refresh period slider change"""
         # Round to nearest 5 seconds
@@ -759,6 +823,9 @@ class EInkControlGUI:
                 self.log_message("Periodic refresh disabled")
             else:
                 self.log_message(f"Periodic refresh set to {period}s")
+
+        # Save settings
+        self.save_settings()
 
     def _start_refresh_timer(self):
         """Start or restart the periodic refresh timer"""
