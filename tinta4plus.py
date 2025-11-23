@@ -35,6 +35,9 @@ from WacomManager import WacomManager
 
 
 class EInkControlGUI:
+    # Version
+    VERSION = "0.1.0 alpha"
+
     # Configuration
     SOCKET_PATH = '/tmp/tinta4plus.sock'
     KEEPALIVE_INTERVAL = 2.4  # seconds (send keepalive every 2.4s, watchdog is 20s)
@@ -138,8 +141,14 @@ class EInkControlGUI:
                                          font=('TkDefaultFont', 10, 'bold'),
                                          relief=tk.RAISED, bd=3,
                                          command=self.on_eink_toggled,
+                                         activebackground="#b8aa00",  # Darker yellow
+                                         activeforeground="black",
                                          padx=20, pady=10)
         self.eink_toggle_btn.pack(expand=True, fill=tk.X)
+
+        # Bind hover effects for eInk toggle button
+        self.eink_toggle_btn.bind("<Enter>", lambda e: self._on_eink_btn_hover(e, True))
+        self.eink_toggle_btn.bind("<Leave>", lambda e: self._on_eink_btn_hover(e, False))
 
         # Refresh button
         self.btn_refresh = ttk.Button(display_frame, text="Full Refresh (Clear Ghost)",
@@ -223,14 +232,30 @@ class EInkControlGUI:
         self.log_text.tag_config('error', foreground='red')
         self.log_text.tag_config('info', foreground='blue')
 
-        # Buy Me A Coffee button (bottom right corner)
-        coffee_btn = tk.Button(main_frame, text="Buy Me A Coffee",
-                              bg="#bcb132", fg="white",
-                              font=('TkDefaultFont', 8),
-                              relief=tk.RAISED, bd=2,
-                              command=self.on_buy_coffee,
-                              padx=8, pady=4)
-        coffee_btn.grid(row=row, column=0, sticky=tk.E, padx=10, pady=5)
+        # Version and Buy Me A Coffee button row
+        version_coffee_frame = ttk.Frame(main_frame)
+        version_coffee_frame.grid(row=row, column=0, sticky=(tk.W, tk.E), padx=10, pady=5)
+        version_coffee_frame.columnconfigure(0, weight=1)  # Allow space to expand between elements
+
+        # Version label (left side)
+        version_label = ttk.Label(version_coffee_frame, text=f"Version {self.VERSION}",
+                                 font=('TkDefaultFont', 8))
+        version_label.grid(row=0, column=0, sticky=tk.W)
+
+        # Buy Me A Coffee button (right side)
+        self.coffee_btn = tk.Button(version_coffee_frame, text="Buy Me A Coffee",
+                                   bg="yellow", fg="black",
+                                   font=('TkDefaultFont', 8),
+                                   relief=tk.RAISED, bd=2,
+                                   command=self.on_buy_coffee,
+                                   activebackground="#b8aa00",  # Darker yellow
+                                   activeforeground="black",
+                                   padx=8, pady=4)
+        self.coffee_btn.grid(row=0, column=1, sticky=tk.E)
+
+        # Bind hover effects for coffee button
+        self.coffee_btn.bind("<Enter>", lambda e: self.coffee_btn.config(bg="#b8aa00"))
+        self.coffee_btn.bind("<Leave>", lambda e: self.coffee_btn.config(bg="yellow"))
 
         # Initial log message
         self.log_message("Application started")
@@ -695,6 +720,23 @@ class EInkControlGUI:
         self.scale_label.config(text=f"{scale:.2f}")
         self.log_message(f"Display scale set to {scale:.2f}x (will apply on next display switch)")
 
+    def _on_eink_btn_hover(self, event, entering):
+        """Handle hover effects for eInk toggle button"""
+        if entering:
+            # Mouse entering - darken the current color
+            if self.eink_enabled_var.get():
+                # Currently green (enabled) - use darker green
+                self.eink_toggle_btn.config(bg="#006400")  # Dark green
+            else:
+                # Currently yellow (disabled) - use darker yellow
+                self.eink_toggle_btn.config(bg="#b8aa00")  # Darker yellow
+        else:
+            # Mouse leaving - restore original color
+            if self.eink_enabled_var.get():
+                self.eink_toggle_btn.config(bg="green")
+            else:
+                self.eink_toggle_btn.config(bg="yellow")
+
     def on_buy_coffee(self):
         """Handle Buy Me A Coffee button click"""
         try:
@@ -725,6 +767,178 @@ class EInkControlGUI:
                 pass
 
         self.root.destroy()
+
+
+def show_disclaimer_dialog(parent=None):
+    """Show disclaimer dialog on first launch. Returns True if user agrees, False otherwise."""
+    # Load EULA text from external file
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    eula_file = os.path.join(script_dir, "README_EULA_INSTRUCTIONS_WARNINGS.txt")
+
+    try:
+        with open(eula_file, 'r') as f:
+            DISCLAIMER_TEXT = f.read()
+    except FileNotFoundError:
+        # Show error message and terminate
+        if parent:
+            messagebox.showerror("EULA Not Found",
+                               "EULA file not found:\n" + eula_file +
+                               "\n\nThe application will now exit.")
+        else:
+            root = tk.Tk()
+            root.withdraw()
+            messagebox.showerror("EULA Not Found",
+                               "EULA file not found:\n" + eula_file +
+                               "\n\nThe application will now exit.")
+            root.destroy()
+        sys.exit(1)
+    except Exception as e:
+        # Show error message for other read errors and terminate
+        error_msg = f"Failed to read EULA file:\n{eula_file}\n\nError: {str(e)}\n\nThe application will now exit."
+        if parent:
+            messagebox.showerror("EULA Not Found", error_msg)
+        else:
+            root = tk.Tk()
+            root.withdraw()
+            messagebox.showerror("EULA Not Found", error_msg)
+            root.destroy()
+        sys.exit(1)
+
+    # Check if agreement file exists
+    config_dir = os.path.expanduser("~/.config/Tinta4Plus")
+    agree_file = os.path.join(config_dir, "agree")
+
+    if os.path.exists(agree_file):
+        return True  # User has already agreed
+
+    # Create a custom EULA dialog
+    dialog = tk.Toplevel(parent)
+    dialog.title("End User License Agreement")
+    dialog.geometry("900x750")
+    dialog.resizable(False, False)
+
+    # Disable the close button (X) - user must click Agree or Disagree
+    dialog.protocol("WM_DELETE_WINDOW", lambda: None)
+
+    # Make it modal
+    dialog.grab_set()
+    dialog.focus_set()
+
+    # Center the dialog on screen
+    dialog.update_idletasks()
+    x = (dialog.winfo_screenwidth() // 2) - (650 // 2)
+    y = (dialog.winfo_screenheight() // 2) - (600 // 2)
+    dialog.geometry(f'900x750+{x}+{y}')
+
+    # Result variable
+    result = {'agreed': False}
+
+    def on_agree():
+        result['agreed'] = True
+        dialog.destroy()
+
+    def on_disagree():
+        result['agreed'] = False
+        dialog.destroy()
+
+    # Top frame with warning icon and title
+    top_frame = tk.Frame(dialog, bg='white', pady=10)
+    top_frame.pack(fill=tk.X)
+
+    # Warning icon (using text emoji)
+    icon_label = tk.Label(top_frame, text="⚠", font=('TkDefaultFont', 48),
+                         bg='white', fg='orange')
+    icon_label.pack(side=tk.LEFT, padx=20)
+
+    # Title
+    title_label = tk.Label(top_frame, text="End User License Agreement\n\nPlease read carefully",
+                          font=('TkDefaultFont', 12, 'bold'), bg='white', justify=tk.LEFT)
+    title_label.pack(side=tk.LEFT, padx=10)
+
+    # Separator
+    separator = ttk.Separator(dialog, orient=tk.HORIZONTAL)
+    separator.pack(fill=tk.X, padx=5, pady=5)
+
+    # Button frame (pack this BEFORE the text so it stays at bottom)
+    button_frame = tk.Frame(dialog)
+    button_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=10)
+
+    # Bottom separator (pack before text frame)
+    separator2 = ttk.Separator(dialog, orient=tk.HORIZONTAL)
+    separator2.pack(side=tk.BOTTOM, fill=tk.X, padx=5, pady=5)
+
+    # Scrolled text widget for EULA (pack last so it fills remaining space)
+    text_frame = tk.Frame(dialog)
+    text_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+    # Create ScrolledText with vertical scrollbar
+    eula_text = scrolledtext.ScrolledText(text_frame, wrap=tk.WORD,
+                                         font=('TkDefaultFont', 11),
+                                         relief=tk.SUNKEN, bd=2,
+                                         width=1, height=1)  # Dummy size, will expand
+    eula_text.pack(fill=tk.BOTH, expand=True)
+    eula_text.insert('1.0', DISCLAIMER_TEXT)
+    eula_text.config(state=tk.DISABLED)  # Make read-only
+
+    # Agree button (left side, initially disabled)
+    agree_btn = ttk.Button(button_frame, text="Agree",
+                          command=on_agree,
+                          state='disabled')
+    agree_btn.pack(side=tk.LEFT, padx=5)
+
+    # Disagree button (right side, default)
+    disagree_btn = ttk.Button(button_frame, text="Disagree",
+                             command=on_disagree)
+    disagree_btn.pack(side=tk.RIGHT, padx=5)
+
+    # Make Disagree the default button (focused)
+    disagree_btn.focus_set()
+
+    # Function to check if user has scrolled to the bottom
+    def on_scroll(*args):
+        # Get the current position of the scrollbar
+        # yview() returns (top, bottom) as fractions of the total content
+        pos = eula_text.yview()
+        # If bottom is at or near 1.0 (end of document), enable Agree button
+        if pos[1] >= 0.99:  # Allow small margin for rounding
+            agree_btn.config(state='normal')
+
+    # Bind scroll event to check position
+    eula_text.bind('<Configure>', on_scroll)
+    eula_text.bind('<MouseWheel>', on_scroll)
+    eula_text.bind('<Button-4>', on_scroll)  # Linux scroll up
+    eula_text.bind('<Button-5>', on_scroll)  # Linux scroll down
+    eula_text.bind('<Key>', on_scroll)  # Arrow keys, Page Down, etc.
+
+    # Also monitor the scrollbar directly - get the vbar widget
+    vbar = eula_text.vbar  # ScrolledText has a vbar attribute for the scrollbar
+    if vbar:
+        original_set = vbar.set
+        def scrollbar_set(*args):
+            original_set(*args)
+            on_scroll()
+        vbar.set = scrollbar_set
+
+    # Handle Enter key on buttons
+    disagree_btn.bind('<Return>', lambda e: on_disagree())
+    agree_btn.bind('<Return>', lambda e: on_agree())
+
+    # Wait for dialog to close
+    dialog.wait_window()
+
+    if result['agreed']:
+        # User agreed - create agreement file
+        try:
+            os.makedirs(config_dir, exist_ok=True)
+            with open(agree_file, 'w') as f:
+                f.write('')  # Empty file
+            return True
+        except Exception as e:
+            print(f"Error creating agreement file: {e}")
+            return False
+    else:
+        # User declined
+        return False
 
 
 def main():
@@ -766,8 +980,18 @@ def main():
             logger.info(f"Using helper at: {HELPER_SCRIPT}")
     
     root = tk.Tk()
+    root.withdraw()  # Hide the main window initially
+
+    # Check disclaimer agreement BEFORE showing the main window
+    if not show_disclaimer_dialog(root):
+        print("User declined disclaimer. Exiting.")
+        root.destroy()
+        sys.exit(0)
+
+    # User agreed, show the main window
+    root.deiconify()
     app = EInkControlGUI(root, HELPER_SCRIPT, logger)
-    
+
     try:
         root.mainloop()
     except KeyboardInterrupt:
