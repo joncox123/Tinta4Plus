@@ -158,25 +158,20 @@ class HelperDaemon:
                 response['message'] = 'pong'
             
             elif cmd == 'enable-eink':
-                self.eink.switch_to_eink()
+                self.eink.enable_eink()
                 response['success'] = True
-                response['message'] = 'Switched to E-Ink display'
-            
-            elif cmd == 'enable-oled':
-                self.eink.switch_to_oled()
+                response['message'] = 'E-Ink display enabled'
+
+            elif cmd == 'disable-eink':
+                self.eink.disable_eink()
                 response['success'] = True
-                response['message'] = 'Switched to OLED display'
+                response['message'] = 'E-Ink display disabled'
             
             elif cmd == 'refresh-eink':
                 self.eink.refresh_full()
                 response['success'] = True
                 response['message'] = 'E-Ink full refresh completed'
-            
-            elif cmd == 'refresh-eink-quick':
-                self.eink.refresh_quick()
-                response['success'] = True
-                response['message'] = 'E-Ink quick refresh completed'
-            
+
             elif cmd == 'get-ec-status':
                 # Return EC access status
                 status = self.ec.get_access_status()

@@ -23,7 +23,7 @@ class HelperClient:
         self.connected = False
         self.lock = threading.Lock()
     
-    def connect(self, socket_path, timeout=5.0):
+    def connect(self, socket_path, timeout=10.0):
         """Connect to helper daemon socket"""
         try:
             self.socket = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

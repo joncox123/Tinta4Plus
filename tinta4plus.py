@@ -37,7 +37,7 @@ class EInkControlGUI:
     # Configuration
     SOCKET_PATH = '/tmp/tinta4plus.sock'
     KEEPALIVE_INTERVAL = 2.4  # seconds (send keepalive every 2.4s, watchdog is 20s)
-    SOCKET_TIMEOUT = 5.0  # seconds
+    SOCKET_TIMEOUT = 10.0  # seconds
 
     # Display names (ThinkBook Plus Gen 4 has eDP-1=OLED, eDP-2=E-Ink)
     DISPLAY_OLED = "eDP-1"
@@ -117,23 +117,23 @@ class EInkControlGUI:
         display_frame.columnconfigure(1, weight=1)
         row += 1
         
-        # E-Ink / OLED buttons
-        self.btn_enable_eink = ttk.Button(display_frame, text="Switch to E-Ink", 
-                                          command=self.on_enable_eink)
-        self.btn_enable_eink.grid(row=0, column=0, padx=5, pady=5, sticky=(tk.W, tk.E))
-        
-        self.btn_enable_oled = ttk.Button(display_frame, text="Switch to OLED", 
-                                          command=self.on_enable_oled)
-        self.btn_enable_oled.grid(row=0, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
-        
-        # Refresh buttons
-        self.btn_refresh = ttk.Button(display_frame, text="Full Refresh (Clear Ghost)", 
+        # E-Ink toggle control
+        eink_toggle_frame = ttk.Frame(display_frame)
+        eink_toggle_frame.grid(row=0, column=0, columnspan=2, padx=5, pady=5, sticky=(tk.W, tk.E))
+
+        self.eink_enabled_var = tk.BooleanVar(value=False)
+        self.eink_toggle_btn = tk.Button(eink_toggle_frame, text="eInk Disabled",
+                                         bg="yellow", fg="black",
+                                         font=('TkDefaultFont', 10, 'bold'),
+                                         relief=tk.RAISED, bd=3,
+                                         command=self.on_eink_toggled,
+                                         padx=20, pady=10)
+        self.eink_toggle_btn.pack(expand=True, fill=tk.X)
+
+        # Refresh button
+        self.btn_refresh = ttk.Button(display_frame, text="Full Refresh (Clear Ghost)",
                                       command=self.on_refresh_full)
-        self.btn_refresh.grid(row=1, column=0, padx=5, pady=5, sticky=(tk.W, tk.E))
-        
-        self.btn_refresh_quick = ttk.Button(display_frame, text="Quick Refresh", 
-                                            command=self.on_refresh_quick)
-        self.btn_refresh_quick.grid(row=1, column=1, padx=5, pady=5, sticky=(tk.W, tk.E))
+        self.btn_refresh.grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky=(tk.W, tk.E))
         
         # Display enable/disable controls
         display_control_frame = ttk.Frame(display_frame)
@@ -290,7 +290,7 @@ class EInkControlGUI:
         # First try to connect to existing helper
         if os.path.exists(self.SOCKET_PATH):
             try:
-                if self.helper.connect(self.SOCKET_PATH, timeout=2.0):
+                if self.helper.connect(self.SOCKET_PATH, timeout=self.SOCKET_TIMEOUT):
                     self.update_status("Connected to helper daemon")
                     self.log_message("Connected to existing helper daemon")
                     self.start_keepalive()
@@ -339,7 +339,7 @@ class EInkControlGUI:
             max_attempts = 10
             for attempt in range(max_attempts):
                 if os.path.exists(self.SOCKET_PATH):
-                    if self.helper.connect(self.SOCKET_PATH, timeout=2.0):
+                    if self.helper.connect(self.SOCKET_PATH, timeout=self.SOCKET_TIMEOUT):
                         self.root.after(0, self._helper_launch_success)
                         return
                 time.sleep(0.5)
@@ -419,7 +419,7 @@ class EInkControlGUI:
         # Try to connect to existing socket first
         if os.path.exists(self.SOCKET_PATH):
             try:
-                if self.helper.connect(self.SOCKET_PATH, timeout=2.0):
+                if self.helper.connect(self.SOCKET_PATH, timeout=self.SOCKET_TIMEOUT):
                     self.log_message("✓ Reconnected to existing helper")
                     self.update_status("Reconnected to helper daemon")
                     self.start_keepalive()
@@ -543,33 +543,33 @@ class EInkControlGUI:
     
     # === Event Handlers ===
     
-    def on_enable_eink(self):
-        """Switch to E-Ink display"""
-        self.log_message("Switching to E-Ink display...")
-        response = self.execute_helper_command('enable-eink')
+    def on_eink_toggled(self):
+        """Handle E-Ink display toggle"""
+        enabled = self.eink_enabled_var.get()
+        # Toggle the state
+        enabled = not enabled
+        command = 'enable-eink' if enabled else 'disable-eink'
+
+        self.log_message(f"{'Enabling' if enabled else 'Disabling'} E-Ink display...")
+        response = self.execute_helper_command(command)
+
         if response:
-            self.update_status("E-Ink display active")
-    
-    def on_enable_oled(self):
-        """Switch to OLED display"""
-        self.log_message("Switching to OLED display...")
-        response = self.execute_helper_command('enable-oled')
-        if response:
-            self.update_status("OLED display active")
+            self.eink_enabled_var.set(enabled)
+            # Update button appearance
+            if enabled:
+                self.eink_toggle_btn.config(text="eInk Enabled", bg="green", fg="white")
+            else:
+                self.eink_toggle_btn.config(text="eInk Disabled", bg="yellow", fg="black")
+            self.update_status(f"E-Ink display {'enabled' if enabled else 'disabled'}")
+        else:
+            # Keep current state on failure
+            pass
     
     def on_refresh_full(self):
         """Perform full E-Ink refresh"""
         self.log_message("Performing full E-Ink refresh (clearing ghosting)...")
         self.update_status("Refreshing E-Ink display...")
         response = self.execute_helper_command('refresh-eink')
-        if response:
-            self.update_status("E-Ink refresh complete")
-    
-    def on_refresh_quick(self):
-        """Perform quick E-Ink refresh"""
-        self.log_message("Performing quick E-Ink refresh...")
-        self.update_status("Refreshing E-Ink display...")
-        response = self.execute_helper_command('refresh-eink-quick')
         if response:
             self.update_status("E-Ink refresh complete")
     
