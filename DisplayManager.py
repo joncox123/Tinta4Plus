@@ -201,36 +201,22 @@ class DisplayManager:
         # Try feh first (works great on X11)
         if self._command_exists('feh'):
             try:
-                # feh command to display fullscreen image at specific position
-                # Using borderless and window hints to cover taskbar
+                # feh command with fullscreen flag - simpler and more reliable
+                # The --fullscreen flag should make feh a top-level window
                 cmd = [
                     'feh',
-                    '--borderless',
-                    '--no-menus',
-                    '--geometry', f"{geometry['width']}x{geometry['height']}+{geometry['x']}+{geometry['y']}",
-                    '--scale-down',
-                    '--auto-zoom',
-                    '--class', 'feh-fullscreen',  # Set window class for easy identification
+                    '--fullscreen',           # Make it fullscreen
+                    '--auto-zoom',            # Auto-zoom to fit
+                    '--no-menus',             # No right-click menu
+                    '--hide-pointer',         # Hide mouse cursor
                     image_path
                 ]
 
-                self.logger.info(f"Displaying image on {display_name} using feh")
+                self.logger.info(f"Displaying fullscreen image on {display_name} using feh")
                 process = subprocess.Popen(cmd)
 
                 # Give it a moment to display
-                time.sleep(0.3)
-
-                # Use wmctrl to set the window to be above all others and skip taskbar
-                if self._command_exists('wmctrl'):
-                    try:
-                        # Wait a bit more for window to be created
-                        time.sleep(0.2)
-                        # Set window to be above all others and fullscreen state
-                        subprocess.run(['wmctrl', '-r', 'feh-fullscreen', '-b', 'add,above,fullscreen'],
-                                     timeout=2, capture_output=True)
-                        self.logger.info("Set feh window to be above all other windows")
-                    except Exception as e:
-                        self.logger.warning(f"Failed to set window properties with wmctrl: {e}")
+                time.sleep(0.5)
 
                 return process
 
