@@ -140,6 +140,10 @@ class EInkControlGUI:
     # NOTE: must install feh and imv for this to work!
     EINK_DISABLED_IMAGE = "eink-disable.jpg"
 
+    # XFCE theme names
+    THEME_HIGH_CONTRAST = "HighContrast"
+    THEME_ADWAITA_DARK = "Adwaita-dark"
+
     """Main GUI application using tkinter"""
 
     def __init__(self, root, HELPER_SCRIPT, logger):
@@ -183,19 +187,62 @@ class EInkControlGUI:
         self.scale_label.config(text=f"{self.display_scale:.2f}")
         self.refresh_period_var.set(settings['refresh_period'])
         self.refresh_period_label.config(text=str(settings['refresh_period']))
+        self.autoswitch_theme_var.set(settings['autoswitch_theme'])
         
         # Set up window close handler
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-        
+
         # Initialize helper after short delay
         self.root.after(500, self.initialize_helper)
+
+    def set_xfce_theme(self, theme_name):
+        """Set XFCE theme programmatically.
+
+        Args:
+            theme_name: Theme name like 'HighContrast' or 'Adwaita-dark'
+
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        try:
+            subprocess.run([
+                'xfconf-query',
+                '-c', 'xsettings',
+                '-p', '/Net/ThemeName',
+                '-s', theme_name
+            ], check=True, capture_output=True)
+            self.log_message(f"Switched to {theme_name} theme")
+            return True
+        except subprocess.CalledProcessError as e:
+            self.log_message(f"Failed to set theme: {e}", level='error')
+            return False
+        except FileNotFoundError:
+            self.log_message("xfconf-query not found (not running XFCE?)", level='error')
+            return False
+
+    def get_current_theme(self):
+        """Get the current XFCE theme.
+
+        Returns:
+            str: Current theme name, or None if failed
+        """
+        try:
+            result = subprocess.run([
+                'xfconf-query',
+                '-c', 'xsettings',
+                '-p', '/Net/ThemeName'
+            ], capture_output=True, text=True, check=True)
+            return result.stdout.strip()
+        except:
+            return None
 
     def load_settings(self):
         """Load settings from configuration file"""
         # Default settings
         defaults = {
             'display_scale': 1.75,
-            'refresh_period': 15
+            'refresh_period': 15,
+            'autoswitch_theme': True
         }
 
         if not os.path.exists(self.SETTINGS_FILE):
@@ -227,7 +274,8 @@ class EInkControlGUI:
             # Gather current settings
             settings = {
                 'display_scale': self.display_scale,
-                'refresh_period': self.refresh_period_var.get()
+                'refresh_period': self.refresh_period_var.get(),
+                'autoswitch_theme': self.autoswitch_theme_var.get()
             }
 
             # Write to file
@@ -329,6 +377,16 @@ class EInkControlGUI:
 
         scale_container = ttk.Frame(display_frame)
         scale_container.grid(row=3, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
+
+        # Autoswitch theme checkbox
+        self.autoswitch_theme_var = tk.BooleanVar(value=True)
+        self.autoswitch_theme_checkbox = ttk.Checkbutton(
+            display_frame,
+            text="Autoswitch theme (HighContrast ↔ Adwaita-dark)",
+            variable=self.autoswitch_theme_var,
+            command=self.on_autoswitch_theme_changed
+        )
+        self.autoswitch_theme_checkbox.grid(row=4, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
         scale_container.columnconfigure(0, weight=1)
 
         self.scale_var = tk.DoubleVar(value=1.75)
@@ -721,6 +779,10 @@ class EInkControlGUI:
             # Enabling E-Ink
             self.log_message("Enabling E-Ink display...")
 
+            # Step 0: Switch to High Contrast theme if enabled
+            if self.autoswitch_theme_var.get():
+                self.set_xfce_theme(self.THEME_HIGH_CONTRAST)
+
             # Step 1: Enable E-Ink on eDP-2 first
             self.log_message(f"Enabling E-Ink display on {self.DISPLAY_EINK} with {self.display_scale}x scale...")
             if self.display_mgr.enable_display(self.DISPLAY_EINK, scale=self.display_scale):
@@ -860,6 +922,10 @@ class EInkControlGUI:
                     self.log_message(f"✓ E-Ink display ({self.DISPLAY_EINK}) disabled")
                 else:
                     self.log_message(f"⚠ Failed to disable E-Ink display on {self.DISPLAY_EINK}", level='error')
+
+                # Step 6: Switch to Adwaita-dark theme if enabled
+                if self.autoswitch_theme_var.get():
+                    self.set_xfce_theme(self.THEME_ADWAITA_DARK)
             else:
                 # Failed to disable - kill image viewer
                 if self.eink_image_process:
@@ -928,6 +994,17 @@ class EInkControlGUI:
                 self.log_message("Periodic refresh disabled")
             else:
                 self.log_message(f"Periodic refresh set to {period}s")
+
+        # Save settings
+        self.save_settings()
+
+    def on_autoswitch_theme_changed(self):
+        """Handle autoswitch theme checkbox change"""
+        enabled = self.autoswitch_theme_var.get()
+        if enabled:
+            self.log_message("Theme auto-switching enabled")
+        else:
+            self.log_message("Theme auto-switching disabled")
 
         # Save settings
         self.save_settings()
