@@ -31,8 +31,6 @@ from datetime import datetime
 
 from HelperClient import HelperClient
 from DisplayManager import DisplayManager
-from WacomManager import WacomManager
-
 
 class EInkControlGUI:
     # Version
@@ -67,16 +65,18 @@ class EInkControlGUI:
 
         # Managers
         self.display_mgr = DisplayManager(logger)
-        self.wacom_mgr = WacomManager(logger)
 
         # Brightness timer for debouncing
         self.brightness_timer = None
 
+        # Periodic refresh timer
+        self.refresh_timer = None
+
         # Image viewer process for E-Ink privacy screen
         self.eink_image_process = None
 
-        # Display scaling (1.75x default for comfortable viewing on high-DPI displays)
-        self.display_scale = 1.75
+        # Display scaling (1.60x default)
+        self.display_scale = 1.60
 
         # Build UI
         self.build_ui()
@@ -148,16 +148,35 @@ class EInkControlGUI:
         self.eink_toggle_btn.bind("<Leave>", lambda e: self._on_eink_btn_hover(e, False))
 
         # Refresh button
-        self.btn_refresh = ttk.Button(display_frame, text="Full Refresh (Clear Ghost)",
-                                      command=self.on_refresh_full)
+        self.btn_refresh = ttk.Button(display_frame, text="Refresh eInk (Clear Ghosts)",
+                                      command=self.on_refresh_full,
+                                      state='disabled')
         self.btn_refresh.grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky=(tk.W, tk.E))
+
+        # Refresh period slider
+        refresh_period_label = ttk.Label(display_frame, text="Refresh period (s):")
+        refresh_period_label.grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
+
+        refresh_period_container = ttk.Frame(display_frame)
+        refresh_period_container.grid(row=2, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
+        refresh_period_container.columnconfigure(0, weight=1)
+
+        self.refresh_period_var = tk.IntVar(value=15)
+        self.refresh_period_slider = ttk.Scale(refresh_period_container, from_=0, to=60,
+                                              orient=tk.HORIZONTAL,
+                                              variable=self.refresh_period_var,
+                                              command=self.on_refresh_period_changed)
+        self.refresh_period_slider.grid(row=0, column=0, sticky=(tk.W, tk.E))
+
+        self.refresh_period_label = ttk.Label(refresh_period_container, text="15")
+        self.refresh_period_label.grid(row=0, column=1, padx=(5, 0))
 
         # Display scale slider
         scale_label = ttk.Label(display_frame, text="Display Scale:")
-        scale_label.grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
+        scale_label.grid(row=3, column=0, sticky=tk.W, padx=5, pady=5)
 
         scale_container = ttk.Frame(display_frame)
-        scale_container.grid(row=2, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
+        scale_container.grid(row=3, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
         scale_container.columnconfigure(0, weight=1)
 
         self.scale_var = tk.DoubleVar(value=1.75)
@@ -568,6 +587,9 @@ class EInkControlGUI:
                 self.eink_toggle_btn.config(text="eInk Enabled", bg="green", fg="white")
                 self.update_status("E-Ink display enabled")
 
+                # Enable refresh button
+                self.btn_refresh.config(state='normal')
+
                 # Step 3: Enable frontlight automatically with current brightness
                 self.log_message("Enabling frontlight for E-Ink display...")
                 brightness_level = self.brightness_var.get()
@@ -587,9 +609,19 @@ class EInkControlGUI:
                     self.log_message(f"✓ OLED display ({self.DISPLAY_OLED}) disabled")
                 else:
                     self.log_message(f"⚠ Failed to disable OLED display on {self.DISPLAY_OLED}", level='error')
+
+                # Start periodic refresh timer if configured
+                self._start_refresh_timer()
+
         else:
             # Disabling E-Ink
             self.log_message("Preparing to disable E-Ink display...")
+
+            # Step 1: Stop periodic refresh timer first
+            self._stop_refresh_timer()
+
+            # Step 2: Disable refresh button
+            self.btn_refresh.config(state='disabled')
 
             # Step 3: Display privacy image on E-Ink screen
             image_path = self.EINK_DISABLED_IMAGE
@@ -713,6 +745,57 @@ class EInkControlGUI:
         self.scale_label.config(text=f"{scale:.2f}")
         self.log_message(f"Display scale set to {scale:.2f}x (will apply on next display switch)")
 
+    def on_refresh_period_changed(self, value):
+        """Handle refresh period slider change"""
+        # Round to nearest 5 seconds
+        period = int(round(float(value) / 5.0) * 5)
+        self.refresh_period_var.set(period)
+        self.refresh_period_label.config(text=str(period))
+
+        # Restart the refresh timer if eInk is active
+        if self.eink_enabled_var.get():
+            self._start_refresh_timer()
+            if period == 0:
+                self.log_message("Periodic refresh disabled")
+            else:
+                self.log_message(f"Periodic refresh set to {period}s")
+
+    def _start_refresh_timer(self):
+        """Start or restart the periodic refresh timer"""
+        # Cancel existing timer if any
+        if self.refresh_timer:
+            self.root.after_cancel(self.refresh_timer)
+            self.refresh_timer = None
+
+        # Get current period
+        period = self.refresh_period_var.get()
+
+        # Only start timer if period > 0 and eInk is active
+        if period > 0 and self.eink_enabled_var.get():
+            self.refresh_timer = self.root.after(period * 1000, self._periodic_refresh)
+            self.logger.info(f"Started periodic refresh timer ({period}s)")
+
+    def _stop_refresh_timer(self):
+        """Stop the periodic refresh timer"""
+        if self.refresh_timer:
+            self.root.after_cancel(self.refresh_timer)
+            self.refresh_timer = None
+            self.logger.info("Stopped periodic refresh timer")
+
+    def _periodic_refresh(self):
+        """Execute a periodic refresh and reschedule"""
+        if self.eink_enabled_var.get():
+            self.log_message("Performing periodic refresh...")
+            self.execute_helper_command('refresh-eink')
+
+            # Reschedule the next refresh
+            period = self.refresh_period_var.get()
+            if period > 0:
+                self.refresh_timer = self.root.after(period * 1000, self._periodic_refresh)
+        else:
+            # eInk is no longer active, stop the timer
+            self.refresh_timer = None
+
     def _on_eink_btn_hover(self, event, entering):
         """Handle hover effects for eInk toggle button"""
         if entering:
@@ -753,6 +836,9 @@ class EInkControlGUI:
             self.on_eink_toggled()
 
             self.log_message("✓ Automatic switch to OLED completed")
+
+        # Stop refresh timer
+        self._stop_refresh_timer()
 
         # Stop keepalive
         if self.keepalive_after_id:

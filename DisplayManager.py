@@ -16,6 +16,11 @@ import time
 
 class DisplayManager:
     """Manage display switching and configuration (no root required)"""
+
+    # ThinkBook Plus Gen 4 IRU hardware specifications
+    OLED_RESOLUTION_WH = [2880, 1800]
+    EINK_RESOLUTION_WH = [2560, 1600]
+
     def __init__(self, logger):
         self.logger = logger
     
@@ -74,17 +79,54 @@ class DisplayManager:
 
         Args:
             display_name: Name of the display (e.g., 'eDP-1', 'eDP-2')
-            scale: Optional scale factor (e.g., 1.75 for 175% scaling to make text larger)
-                   NOTE: xrandr --scale works inversely, so we calculate 1/scale
+            scale: Optional scale factor (e.g., 1.60 means UI appears 1.6x larger, lower DPI)
+                   Uses xrandr --scale with --panning to maintain full panel coverage.
+                   This keeps touch input properly mapped.
         """
         try:
-            # Build xrandr command with scaling if specified
-            cmd = ['xrandr', '--output', display_name, '--auto']
-            if scale is not None:
-                # xrandr --scale works inversely: to make things appear larger (1.75x),
-                # we need to use the inverse scale (1/1.75 = 0.571)
-                inverse_scale = 1.0 / scale
-                cmd.extend(['--scale', f'{inverse_scale}x{inverse_scale}'])
+            # Determine native resolution based on display name
+            # eDP-1 is OLED, eDP-2 is E-Ink on ThinkBook Plus Gen 4
+            if display_name == "eDP-1":
+                native_width, native_height = self.OLED_RESOLUTION_WH
+            elif display_name == "eDP-2":
+                native_width, native_height = self.EINK_RESOLUTION_WH
+            else:
+                self.logger.warning(f"Unknown display {display_name}, using auto mode")
+                native_width, native_height = None, None
+
+            # Build xrandr command
+            cmd = ['xrandr', '--output', display_name]
+
+            if native_width and native_height:
+                # Always specify the exact mode for predictable behavior
+                cmd.extend(['--mode', f'{native_width}x{native_height}'])
+
+                if scale is not None and scale != 1.0:
+                    # Our convention: scale=1.6 means "UI appears 1.6x larger" (lower effective DPI)
+                    # xrandr convention: --scale 1.6 means "zoom out" (UI appears smaller)
+                    # These are OPPOSITE, so we invert for xrandr
+                    scale_inv = 1.0 / scale
+
+                    # Calculate panning size (virtual desktop size)
+                    # For our scale=1.6 (larger UI), we want SMALLER virtual desktop
+                    # Virtual size = native / our_scale = native * scale_inv
+                    panning_width = int(native_width * scale_inv)
+                    panning_height = int(native_height * scale_inv)
+
+                    # xrandr will scale UP this smaller virtual desktop to fill the physical panel
+                    # We pass scale_inv to xrandr because it's inverted from our convention
+                    cmd.extend(['--panning', f'{panning_width}x{panning_height}'])
+                    cmd.extend(['--scale', f'{scale_inv}x{scale_inv}'])
+                    self.logger.info(f"Scaling: virtual desktop {panning_width}x{panning_height}, "
+                                   f"xrandr scale {scale_inv:.3f}x{scale_inv:.3f} (our scale={scale}), "
+                                   f"physical {native_width}x{native_height}")
+                else:
+                    # No scaling - use native resolution with 1:1 scale
+                    cmd.extend(['--panning', f'{native_width}x{native_height}'])
+                    cmd.extend(['--scale', '1x1'])
+            else:
+                # Fallback to auto mode if we don't know the resolution
+                cmd.append('--auto')
 
             # Run xrandr command (may produce spurious BadMatch errors on stderr)
             subprocess.run(
@@ -98,7 +140,7 @@ class DisplayManager:
             time.sleep(0.2)
 
             if self.is_display_active(display_name):
-                scale_info = f" with {scale}x scale" if scale else ""
+                scale_info = f" with {scale}x scale" if scale and scale != 1.0 else ""
                 self.logger.info(f"Enabled display: {display_name}{scale_info}")
                 return True
             else:
