@@ -172,6 +172,16 @@ class HelperDaemon:
                 response['success'] = True
                 response['message'] = 'E-Ink full refresh completed'
 
+            elif cmd == 'set-dynamic':
+                self.eink.set_dynamic_mode()
+                response['success'] = True
+                response['message'] = 'E-Ink set to Dynamic Mode (fast refresh)'
+
+            elif cmd == 'set-reading':
+                self.eink.set_reading_mode()
+                response['success'] = True
+                response['message'] = 'E-Ink set to Reading Mode (high-quality refresh)'
+
             elif cmd == 'get-ec-status':
                 # Return EC access status
                 status = self.ec.get_access_status()

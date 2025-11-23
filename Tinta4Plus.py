@@ -353,12 +353,28 @@ class EInkControlGUI:
                                       state='disabled')
         self.btn_refresh.grid(row=1, column=0, columnspan=2, padx=5, pady=5, sticky=(tk.W, tk.E))
 
+        # Mode buttons (Dynamic and Reading)
+        mode_frame = ttk.Frame(display_frame)
+        mode_frame.grid(row=2, column=0, columnspan=2, padx=5, pady=5, sticky=(tk.W, tk.E))
+        mode_frame.columnconfigure(0, weight=1)
+        mode_frame.columnconfigure(1, weight=1)
+
+        self.btn_set_dynamic = ttk.Button(mode_frame, text="Set Dynamic",
+                                          command=self.on_set_dynamic,
+                                          state='disabled')
+        self.btn_set_dynamic.grid(row=0, column=0, padx=(0, 2), sticky=(tk.W, tk.E))
+
+        self.btn_set_reading = ttk.Button(mode_frame, text="Set Reading",
+                                          command=self.on_set_reading,
+                                          state='disabled')
+        self.btn_set_reading.grid(row=0, column=1, padx=(2, 0), sticky=(tk.W, tk.E))
+
         # Refresh period slider
         refresh_period_label = ttk.Label(display_frame, text="Refresh period (s):")
-        refresh_period_label.grid(row=2, column=0, sticky=tk.W, padx=5, pady=5)
+        refresh_period_label.grid(row=3, column=0, sticky=tk.W, padx=5, pady=5)
 
         refresh_period_container = ttk.Frame(display_frame)
-        refresh_period_container.grid(row=2, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
+        refresh_period_container.grid(row=3, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
         refresh_period_container.columnconfigure(0, weight=1)
 
         self.refresh_period_var = tk.IntVar(value=15)
@@ -373,10 +389,10 @@ class EInkControlGUI:
 
         # Display scale slider
         scale_label = ttk.Label(display_frame, text="Display Scale:")
-        scale_label.grid(row=3, column=0, sticky=tk.W, padx=5, pady=5)
+        scale_label.grid(row=4, column=0, sticky=tk.W, padx=5, pady=5)
 
         scale_container = ttk.Frame(display_frame)
-        scale_container.grid(row=3, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
+        scale_container.grid(row=4, column=1, sticky=(tk.W, tk.E), padx=5, pady=5)
 
         # Autoswitch theme checkbox
         self.autoswitch_theme_var = tk.BooleanVar(value=True)
@@ -386,7 +402,7 @@ class EInkControlGUI:
             variable=self.autoswitch_theme_var,
             command=self.on_autoswitch_theme_changed
         )
-        self.autoswitch_theme_checkbox.grid(row=4, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
+        self.autoswitch_theme_checkbox.grid(row=5, column=0, columnspan=2, sticky=tk.W, padx=5, pady=5)
         scale_container.columnconfigure(0, weight=1)
 
         self.scale_var = tk.DoubleVar(value=1.75)
@@ -801,8 +817,10 @@ class EInkControlGUI:
                 self.eink_toggle_btn.config(text="eInk Enabled", bg="green", fg="white")
                 self.update_status("E-Ink display enabled")
 
-                # Enable refresh button
+                # Enable refresh button and mode buttons
                 self.btn_refresh.config(state='normal')
+                self.btn_set_dynamic.config(state='normal')
+                self.btn_set_reading.config(state='normal')
 
                 # Step 3: Enable frontlight automatically with current brightness
                 self.log_message("Enabling frontlight for E-Ink display...")
@@ -848,8 +866,10 @@ class EInkControlGUI:
                 self.floating_refresh_button.destroy()
                 self.floating_refresh_button = None
 
-            # Step 3: Disable refresh button
+            # Step 3: Disable refresh button and mode buttons
             self.btn_refresh.config(state='disabled')
+            self.btn_set_dynamic.config(state='disabled')
+            self.btn_set_reading.config(state='disabled')
 
             # Step 4: Display privacy image on E-Ink screen
             image_path = self.EINK_DISABLED_IMAGE
@@ -946,7 +966,23 @@ class EInkControlGUI:
         response = self.execute_helper_command('refresh-eink')
         if response:
             self.update_status("E-Ink refresh complete")
-    
+
+    def on_set_dynamic(self):
+        """Set E-Ink to Dynamic Mode (fast refresh)"""
+        self.log_message("Setting E-Ink to Dynamic Mode (fast refresh)...")
+        self.update_status("Setting Dynamic Mode...")
+        response = self.execute_helper_command('set-dynamic')
+        if response:
+            self.update_status("E-Ink set to Dynamic Mode")
+
+    def on_set_reading(self):
+        """Set E-Ink to Reading Mode (high-quality refresh)"""
+        self.log_message("Setting E-Ink to Reading Mode (high-quality refresh)...")
+        self.update_status("Setting Reading Mode...")
+        response = self.execute_helper_command('set-reading')
+        if response:
+            self.update_status("E-Ink set to Reading Mode")
+
     def on_brightness_changed(self, value):
         """Handle brightness slider change"""
         level = int(float(value))
