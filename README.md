@@ -14,11 +14,11 @@ At the present time, Tinta4Plus only works on exactly the following system confi
   - Xorg X11 Window System (not tested yet on Wayland). Xorg is the default system for Xubuntu.
 - Required Python 3 packages: `sudo apt install python3.13 python3-pip python3-portio python3-tk python3-usb`
 - Required additional packages: `sudo apt install feh imv mokutil x11-xserver-utils xfconf`
-- Disable Secure Boot so to control the eInk frontlight and other hardware features
+- Disable Secure Boot in order to control the eInk frontlight and other hardware features
   - Reboot your laptop and press ENTER repeatedly immediately after power on until you get the boot menu.
   - Hit the approprite F key to enter BIOS settings.
   - Navigate to Security and scroll down (near the bottom) to find Secure Boot. Change to Disabled.
-  - Saving BIOS settings and reboot.
+  - Save BIOS settings and reboot.
 - Root permissions are required to write to the Embedded Controller (e.g. for frontlight control) and for the eInk controller (T-CON)
 
 To run the app, simply cd into the extracted directory and execute: ./Tinta4Plus.py
