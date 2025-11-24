@@ -3,6 +3,8 @@ Now you can use the eInk display with Linux on the Lenovo ThinkBook Gen 4 Plus l
 
 [![Buy Me A Coffee](https://img.buymeacoffee.com/button-api/?text=Buy%20me%20a%20coffee&slug=joncox&button_colour=FFDD00&font_colour=000000&font_family=Inter&outline_colour=000000&coffee_colour=ffffff)](https://www.buymeacoffee.com/joncox)
 
+<img src="eink-disable.jpg" alt="Diagram" width="60%"/>
+
 ## BRIEF WARNING AND DISCLAIMER
 This software was independently developed without any input, support or documentation from either eInk or Lenovo. It has only been tested on one system, my own. While it has never damaged my hardware, either temporarily or permanently, it is possible for it to do so if it malfunctions. Temporary impairment can occur should corrupted or invalid commands be written to the Embedded Controller or the T-CON, and permanent damage is theoretically possible. If this occurs, you may need to hard reboot your system or even hard reset the EC (see instructions below). This software is currently a proof-of-concept demonstration, alpha-quality and has known bugs. Do not use this software if you are not willing to accept the risks of temporary or permanent hardware damage or data loss and lost productivity.
 
