@@ -258,42 +258,77 @@ class HelperDaemon:
             }
     
     def handle_client(self, client_socket):
-        """Handle a client connection"""
+        """Handle a client connection with improved error handling"""
+        client_addr = "unix-client"
+        self.logger.info(f"Client connected: {client_addr}")
+        
         try:
             while self.running:
                 # Receive data (with 4-byte length prefix)
-                length_data = client_socket.recv(4)
-                if not length_data:
-                    break
-                
-                msg_length = struct.unpack('!I', length_data)[0]
-                
-                # Receive the message
-                data = b''
-                while len(data) < msg_length:
-                    chunk = client_socket.recv(msg_length - len(data))
-                    if not chunk:
+                try:
+                    length_data = self._recv_exact(client_socket, 4)
+                    if not length_data:
+                        self.logger.info("Client disconnected (no data)")
                         break
-                    data += chunk
+                    
+                    msg_length = struct.unpack('!I', length_data)[0]
+                    
+                    # Validate message length
+                    if msg_length > 1024 * 1024:  # 1MB limit
+                        self.logger.error(f"Message too large: {msg_length} bytes, closing connection")
+                        break
+                    
+                    # Receive the message
+                    data = self._recv_exact(client_socket, msg_length)
+                    if not data or len(data) != msg_length:
+                        self.logger.warning(f"Incomplete message received (expected {msg_length}, got {len(data) if data else 0})")
+                        break
+                    
+                except socket.timeout:
+                    self.logger.debug("Client socket timeout, continuing...")
+                    continue
                 
-                if len(data) != msg_length:
+                except Exception as e:
+                    self.logger.error(f"Error receiving from client: {e}")
                     break
                 
                 # Parse JSON command
-                command_data = json.loads(data.decode('utf-8'))
+                try:
+                    command_data = json.loads(data.decode('utf-8'))
+                except json.JSONDecodeError as e:
+                    self.logger.error(f"Invalid JSON from client: {e}")
+                    error_response = {
+                        'success': False,
+                        'error': f"Invalid JSON: {e}"
+                    }
+                    self._send_response(client_socket, error_response)
+                    continue
                 
-                # Process command
-                response = self.handle_command(command_data)
+                # Process command with timeout protection
+                try:
+                    response = self.handle_command(command_data)
+                except Exception as e:
+                    self.logger.error(f"Unhandled exception in command handler: {e}", exc_info=True)
+                    response = {
+                        'success': False,
+                        'error': f"Internal error: {e}"
+                    }
                 
                 # Send response
-                response_json = json.dumps(response).encode('utf-8')
-                response_length = struct.pack('!I', len(response_json))
-                client_socket.sendall(response_length + response_json)
+                try:
+                    self._send_response(client_socket, response)
+                except Exception as e:
+                    self.logger.error(f"Error sending response to client: {e}")
+                    break
                 
         except Exception as e:
-            self.logger.error(f"Client handler error: {e}")
+            self.logger.error(f"Client handler error: {e}", exc_info=True)
         finally:
-            client_socket.close()
+            try:
+                client_socket.close()
+            except:
+                pass
+            self.logger.info("Client connection closed")
     
     def run(self):
         """Main server loop"""
@@ -359,6 +394,33 @@ class HelperDaemon:
         
         finally:
             self.shutdown()
+    
+    def _recv_exact(self, sock, num_bytes):
+        """Receive exactly num_bytes from socket"""
+        data = b''
+        while len(data) < num_bytes:
+            chunk = sock.recv(num_bytes - len(data))
+            if not chunk:
+                return None
+            data += chunk
+        return data
+    
+    def _send_response(self, sock, response):
+        """Send JSON response with length prefix"""
+        response_json = json.dumps(response).encode('utf-8')
+        
+        # Validate response size
+        if len(response_json) > 1024 * 1024:
+            self.logger.error(f"Response too large: {len(response_json)} bytes")
+            # Send error response instead
+            error_response = json.dumps({
+                'success': False,
+                'error': 'Response too large'
+            }).encode('utf-8')
+            response_json = error_response
+        
+        response_length = struct.pack('!I', len(response_json))
+        sock.sendall(response_length + response_json)
     
     def shutdown(self):
         """Shutdown the daemon"""

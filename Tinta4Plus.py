@@ -672,20 +672,25 @@ class EInkControlGUI:
         self.logger.info(f"Started keepalive timer ({self.KEEPALIVE_INTERVAL}s interval)")
     
     def send_keepalive(self):
-        """Send keepalive message to helper"""
+        """Send keepalive message to helper with improved error handling"""
         if not self.helper.is_connected():
             self.update_status("Helper disconnected - attempting restart...", error=True)
-            self.log_message("Helper disconnected, attempting to restart...", level='error')
+            last_error = self.helper.get_last_error()
+            error_msg = f"Helper disconnected: {last_error}" if last_error else "Helper disconnected"
+            self.log_message(f"{error_msg}, attempting to restart...", level='error')
             self.attempt_helper_restart()
             return  # Don't schedule next keepalive
         
         try:
             response = self.helper.send_command('keepalive')
             if not response or not response.get('success'):
-                self.logger.warning("Keepalive failed")
+                self.logger.warning(f"Keepalive failed: {response}")
                 self.log_message("Keepalive failed, restarting helper...", level='error')
                 self.attempt_helper_restart()
                 return
+            
+            # Log successful keepalive at debug level to avoid spam
+            self.logger.debug("Keepalive successful")
             
             # Schedule next keepalive
             self.keepalive_after_id = self.root.after(
@@ -693,20 +698,38 @@ class EInkControlGUI:
                 self.send_keepalive
             )
             
-        except Exception as e:
-            self.logger.error(f"Keepalive error: {e}")
+        except RuntimeError as e:
+            # Connection-related errors
+            self.logger.error(f"Keepalive connection error: {e}")
             self.update_status("Helper connection lost - restarting...", error=True)
-            self.log_message(f"ERROR: Lost connection to helper - {e}", level='error')
+            self.log_message(f"Connection error: {e}", level='error')
+            self.attempt_helper_restart()
+        
+        except Exception as e:
+            # Unexpected errors
+            self.logger.error(f"Keepalive unexpected error: {e}", exc_info=True)
+            self.update_status("Helper error - restarting...", error=True)
+            self.log_message(f"Unexpected error: {e}", level='error')
             self.attempt_helper_restart()
     
     def attempt_helper_restart(self):
-        """Attempt to restart the helper daemon"""
+        """Attempt to restart the helper daemon with better error recovery"""
         # Cancel any existing keepalive
         if self.keepalive_after_id:
             self.root.after_cancel(self.keepalive_after_id)
             self.keepalive_after_id = None
         
         self.log_message("Attempting to restart helper daemon...")
+        
+        # Disconnect cleanly first
+        try:
+            if self.helper.is_connected():
+                self.helper.disconnect()
+        except Exception as e:
+            self.logger.debug(f"Error during disconnect: {e}")
+        
+        # Small delay to allow cleanup
+        time.sleep(0.5)
         
         # Try to connect to existing socket first
         if os.path.exists(self.SOCKET_PATH):
@@ -718,8 +741,18 @@ class EInkControlGUI:
                     # Re-check EC status and sync frontlight state after reconnect
                     self.root.after(500, self.check_ec_status)
                     return
-            except:
-                pass
+            except Exception as e:
+                self.logger.debug(f"Failed to reconnect to existing socket: {e}")
+                # Get detailed error from helper client
+                last_error = self.helper.get_last_error()
+                if last_error:
+                    self.log_message(f"Connection error: {last_error}", level='error')
+                # Remove stale socket
+                try:
+                    os.remove(self.SOCKET_PATH)
+                    self.log_message("Removed stale socket file")
+                except Exception as e:
+                    self.logger.warning(f"Could not remove socket: {e}")
         
         # Need to launch new helper
         self.log_message("Launching new helper daemon (password may be required)...")
@@ -798,9 +831,13 @@ class EInkControlGUI:
 
 
     def execute_helper_command(self, command, **params):
-        """Execute a command via helper and handle response"""
+        """Execute a command via helper and handle response with retry logic"""
         if not self.helper.is_connected():
-            self.show_error_dialog("Not connected to helper daemon")
+            error_msg = "Not connected to helper daemon"
+            last_error = self.helper.get_last_error()
+            if last_error:
+                error_msg += f"\n\nLast error: {last_error}"
+            self.show_error_dialog(error_msg)
             return None
 
         try:
@@ -817,13 +854,22 @@ class EInkControlGUI:
                 return response
             else:
                 error = response.get('error', 'Unknown error') if response else 'No response'
-                self.log_message(f"✗ Command failed: {error}", level='error')
-                self.show_error_dialog(f"Command failed:\n\n{error}")
+                self.log_message(f"✗ Command '{command}' failed: {error}", level='error')
+                self.show_error_dialog(f"Command '{command}' failed:\n\n{error}")
                 return None
 
+        except RuntimeError as e:
+            # Connection errors - trigger reconnection
+            self.log_message(f"✗ Connection error during '{command}': {e}", level='error')
+            self.update_status("Connection error - attempting restart...", error=True)
+            self.attempt_helper_restart()
+            self.show_error_dialog(f"Connection error:\n\n{e}\n\nAttempting to reconnect...")
+            return None
+        
         except Exception as e:
-            self.log_message(f"✗ Command error: {e}", level='error')
-            self.show_error_dialog(f"Command error:\n\n{e}")
+            self.log_message(f"✗ Command '{command}' error: {e}", level='error')
+            self.logger.error(f"Command error details: {e}", exc_info=True)
+            self.show_error_dialog(f"Command '{command}' error:\n\n{e}")
             return None
     
     # === Event Handlers ===
